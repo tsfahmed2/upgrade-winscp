@@ -77,27 +77,10 @@ Write-Output "$ScriptName - ScriptVersion: 988.1"
 Write-Output "$ScriptName - Log: $LogFile"
 ###############
 
-function Get-InstalledApps
-{
-	Write-Output "***************Beginning function : Get-InstalledApps***********"
-	if ([IntPtr]::Size -eq 4)
-	{
-		$regpath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-		Write-Output 'Found x86'
-	}
-	else
-	{
-		$regpath = @(
-			'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
-			'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-		)
-		Write-Output 'Found x64'
-	}
-	Get-ItemProperty $regpath | .{process { if ($_.DisplayName -and $_.UninstallString) { $_ } } } | Select DisplayName, Publisher, InstallDate, DisplayVersion, UninstallString | Sort DisplayName
-}
 
 function get-latestwinscpversion
 {
+	
 	$releases = 'https://winscp.net/eng/downloads.php'
 	$re = 'WinSCP.+\.exe$'
 	$download_page = Invoke-WebRequest -Uri $releases -UseBasicParsing
@@ -106,10 +89,8 @@ function get-latestwinscpversion
 	$url = 'https://winscp.net/eng' + $url
 	$version = $url -split '-' | select -Last 1 -Skip 1
 	$file_name = $url -split '/' | select -last 1
-	
 	return $version
 }
-
 
 
 
@@ -130,12 +111,12 @@ function download_winscp
 	$file_name = $DownloadUrl -split '/' | select -last 1
 	$URL64 = "https://sourceforge.net/projects/winscp/files/WinSCP/$version/$file_name/download"
 	@{
-		Version	      = $version
-		URL32		  = "https://sourceforge.net/projects/winscp/files/WinSCP/$version/$file_name/download"
-		FileName32    = $file_name
-		ReleaseNotes  = "https://winscp.net/download/WinSCP-${version}-ReadMe.txt"
-		FileType	  = 'exe'
-		DownloadLInk  = $DownloadUrl
+		Version		    = $version
+		URL32		    = "https://sourceforge.net/projects/winscp/files/WinSCP/$version/$file_name/download"
+		FileName32	    = $file_name
+		ReleaseNotes    = "https://winscp.net/download/WinSCP-${version}-ReadMe.txt"
+		FileType	    = 'exe'
+		DownloadLInk    = $DownloadUrl
 	}
 	$Path = $Path + $file_name
 	Write-Output "Installer save path is $Path"
@@ -224,15 +205,26 @@ function Get-UninstallRegistryKey
 
 Set-Alias Get-InstallRegistryKey Get-UninstallRegistryKey
 
+Write-Output "Main starting"
+
+Write-Output "Check if winscp is already installed"
 $winscpinstalled = get-UninstallRegistryKey -SoftwareName "WinSCP" #| Select-Object -First 1
-$installedversion = $winscpinstalled.DisplayVersion
+$installedversion = [System.Version]($winscpinstalled.DisplayVersion)
+
+Write-Output "Installed version of winscp was determined to be $installedversion"
+
+Write-Output "Trying to determine latest available version of WinSCP"
+$version = [System.Version](get-latestwinscpversion)
+Write-Output "Latest Version available of WinSCP is $version"
 
 $Path = "$env:Temp\"
 $Path = $Path + "winscpsetup.exe"
 
+Write-Output "Path to winscp setup file is $Path"
+
 if ($installedversion)
 {
-	if ([System.Version]$installedversion -ne [System.Version](get-latestwinscpversion))
+	if ($installedversion -ne $version)
 	{
 		Write-Output "WinSCP version $installedversion installed already, downloading newer version $version"
 		download_winscp
@@ -248,14 +240,23 @@ if ($installedversion)
 		}
 		Remove-Item $Path -Force
 	}
-	elseif ([System.Version]$installedversion -eq [System.Version](get-latestwinscpversion))
+	elseif ($installedversion -eq $version)
 	{
 		Write-Output "Latest Version of WinSCP installed"
 	}
 }
-elseif ([System.Version]$installedversion -eq $Null)
+elseif ($installedversion -eq $Null)
 {
 	Write-Output "WinSCP not installed"
 }
 
+#initiate hardware inventory 
+Write-Output "Initiating Full Hardware inventory"
+Get-WmiObject -Namespace root\ccm\invagt -Class InventoryActionStatus -Filter { InventoryActionID = '{00000000-0000-0000-0000-000000000001}' } | Remove-WmiObject
+$SMSwmi = [wmiclass]"\root\ccm:SMS_Client"
+$SMSwmi.TriggerSchedule("{00000000-0000-0000-0000-000000000001}")
+Write-Output "Hardware inventory complete."
+
+
 . Stop-Logging
+
